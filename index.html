@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>El Reto del Saber</title>
+<style>
+/* Layout: dos "móviles" lado a lado (jugador activo / espectadores), apilados en pantalla estrecha */
+:root{
+  --bg:#f3f1ec; --panel:#ffffff; --fg:#1f2320; --muted:#6b7268;
+  --accent:#2f6f5e; --accent-fg:#ffffff; --line:#e1ddd2;
+  --ok:#2f7d4f; --ok-bg:#e4f3e8; --bad:#b3432f; --bad-bg:#fbe8e3;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#171a17; --panel:#20241f; --fg:#eeeee7; --muted:#9aa39a;
+    --accent:#5fb89e; --accent-fg:#0d1210; --line:#333831;
+    --ok:#6fcf8e; --ok-bg:#173322; --bad:#e2836d; --bad-bg:#3a2019;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#171a17; --panel:#20241f; --fg:#eeeee7; --muted:#9aa39a;
+  --accent:#5fb89e; --accent-fg:#0d1210; --line:#333831;
+  --ok:#6fcf8e; --ok-bg:#173322; --bad:#e2836d; --bad-bg:#3a2019;
+  color-scheme: dark;
+}
+*{box-sizing:border-box}
+body{
+  background:var(--bg); color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  padding-inline:16px; padding-block:24px;
+}
+.wrap{max-width:920px;margin:0 auto}
+h1{font-size:1.3rem;margin:0 0 4px;text-wrap:balance}
+.sub{color:var(--muted);font-size:.9rem;margin:0 0 24px}
+.stage{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;justify-content:center}
+.phone{
+  width:300px;min-width:0;background:var(--panel);border:1px solid var(--line);
+  border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:14px;
+  box-shadow:0 6px 20px -12px rgba(0,0,0,.25);
+}
+.role{display:flex;align-items:center;gap:8px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.role b{font-size:.78rem;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.tema{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.pregunta{font-size:1.05rem;line-height:1.4;min-height:2.8em}
+.opciones{display:flex;flex-direction:column;gap:8px}
+.opcion{
+  text-align:left;padding:10px 12px;border-radius:10px;border:1px solid var(--line);
+  background:transparent;color:var(--fg);font-size:.95rem;cursor:pointer;
+}
+.opcion:hover{border-color:var(--accent)}
+.opcion:disabled{cursor:default;opacity:.55}
+.opcion.correcta{border-color:var(--ok);background:var(--ok-bg)}
+.opcion.incorrecta{border-color:var(--bad);background:var(--bad-bg)}
+.espera{color:var(--muted);font-size:.9rem;padding:10px 0}
+.resultado{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  padding:16px 10px;border-radius:12px;font-weight:700;font-size:1.1rem;letter-spacing:.02em;
+}
+.resultado.ok{background:var(--ok-bg);color:var(--ok)}
+.resultado.bad{background:var(--bad-bg);color:var(--bad)}
+.btn{
+  border:none;border-radius:10px;padding:11px 14px;font-size:.9rem;font-weight:600;
+  background:var(--accent);color:var(--accent-fg);cursor:pointer;
+}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
+.placeholder{color:var(--muted);font-size:.9rem;padding:20px 0;text-align:center}
+.note{font-size:.78rem;color:var(--muted);margin-top:20px;line-height:1.5}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <h1>El Reto del Saber</h1>
+  <p class="sub">Prueba de mecánica — sin conexión real todavía, solo para sentir el flujo.</p>
+
+  <div class="stage">
+    <div class="phone" id="panelActivo">
+      <div class="role"><span class="dot"></span><b>Jugador activo</b></div>
+      <div id="activoBody"></div>
+    </div>
+
+    <div class="phone" id="panelEspectador">
+      <div class="role"><span class="dot" style="background:var(--muted)"></span><b>Resto de jugadores</b></div>
+      <div id="espectadorBody"></div>
+    </div>
+  </div>
+
+  <p class="note">El jugador activo ve las 3 opciones y elige. Los demás solo ven la pregunta y, al momento, ACIERTO o ERROR — nunca cuál era la opción correcta. Preguntas de ejemplo, no forman parte del banco final.</p>
+</div>
+
+<script>
+const PREGUNTAS = [
+  { tema: "Historia", pregunta: "¿En qué año cayó el Imperio Romano de Occidente?", opciones: ["476","1453","1000"], correcta: 0 },
+  { tema: "Espacio", pregunta: "¿Cuál es el planeta más grande del sistema solar?", opciones: ["Saturno","Júpiter","Neptuno"], correcta: 1 },
+  { tema: "Naturaleza", pregunta: "¿Cuántos corazones tiene un pulpo?", opciones: ["Uno","Tres","Cinco"], correcta: 1 },
+  { tema: "Geografía", pregunta: "¿Cuál es la capital de Australia?", opciones: ["Sídney","Melbourne","Canberra"], correcta: 2 },
+  { tema: "Ciencia", pregunta: "¿Cuál es el símbolo químico del oro?", opciones: ["Au","Ag","Or"], correcta: 0 },
+];
+
+let estado = null; // { tema, pregunta, opciones, correcta, respondida, eleccion }
+
+const activoBody = document.getElementById('activoBody');
+const espectadorBody = document.getElementById('espectadorBody');
+
+function nuevaLectura(){
+  const q = PREGUNTAS[Math.floor(Math.random()*PREGUNTAS.length)];
+  estado = { ...q, respondida:false, eleccion:null };
+  render();
+}
+
+function elegir(i){
+  if (!estado || estado.respondida) return;
+  estado.respondida = true;
+  estado.eleccion = i;
+  render();
+}
+
+function render(){
+  if (!estado){
+    activoBody.innerHTML = `
+      <p class="placeholder">Aún no ha leído ninguna casilla.</p>
+      <button class="btn" onclick="nuevaLectura()">Simular lectura de una casilla</button>
+    `;
+    espectadorBody.innerHTML = `<p class="placeholder">Esperando a que alguien lea una casilla…</p>`;
+    return;
+  }
+
+  const opcionesHtml = estado.opciones.map((o,i)=>{
+    let cls = 'opcion';
+    if (estado.respondida){
+      if (i === estado.correcta) cls += ' correcta';
+      else if (i === estado.eleccion) cls += ' incorrecta';
+    }
+    return `<button class="${cls}" ${estado.respondida?'disabled':''} onclick="elegir(${i})">${'ABC'[i]}) ${o}</button>`;
+  }).join('');
+
+  activoBody.innerHTML = `
+    <div class="tema">${estado.tema}</div>
+    <div class="pregunta">${estado.pregunta}</div>
+    <div class="opciones">${opcionesHtml}</div>
+    ${estado.respondida ? `<button class="btn ghost" onclick="nuevaLectura()">Simular siguiente turno</button>` : ''}
+  `;
+
+  if (!estado.respondida){
+    espectadorBody.innerHTML = `
+      <div class="tema">${estado.tema}</div>
+      <div class="pregunta">${estado.pregunta}</div>
+      <div class="espera">Esperando respuesta del jugador activo…</div>
+    `;
+  } else {
+    const acierto = estado.eleccion === estado.correcta;
+    espectadorBody.innerHTML = `
+      <div class="tema">${estado.tema}</div>
+      <div class="pregunta">${estado.pregunta}</div>
+      <div class="resultado ${acierto?'ok':'bad'}">${acierto ? '✔ ACIERTO' : '✘ ERROR'}</div>
+    `;
+  }
+}
+
+render();
+</script>
+</body>
+</html>
